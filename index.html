@@ -1,0 +1,594 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Retirement Principal Calculator</title>
+<style>
+  /* ============================================================
+     DESIGN TOKENS
+     Aesthetic: light editorial finance — FT salmon paper.
+     Cream page, white cards, deep ink text, gold accent, oxblood
+     for the error message. The dark color stays dark across schemes
+     (--gold-text) so button labels remain readable on the gold accent.
+     ============================================================ */
+  :root {
+    --bg:           #fff1e5;          /* FT salmon page bg */
+    --surface:      #ffffff;          /* white cards */
+    --surface-2:    #fbf6ee;          /* card hover / input focus */
+    --rule:         #e6d5be;          /* hairline borders, warm */
+    --text:         #1a1410;          /* primary text, deep warm ink */
+    --text-dim:     #6b6258;          /* muted text */
+    --text-faint:   #a39787;          /* very muted */
+    --gold:         #b8830f;          /* primary accent */
+    --gold-2:       #966909;          /* gold hover (darker) */
+    --gold-text:    #1a1410;          /* text on gold buttons (always dark) */
+    --oxblood:      #962d20;          /* error messages */
+    --shadow:       0 1px 2px rgba(74,49,22,.05), 0 8px 28px -14px rgba(74,49,22,.14);
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: Georgia, "Times New Roman", serif;
+    font-weight: 300;
+    font-size: 16px;
+    line-height: 1.55;
+    color: var(--text);
+    background: var(--bg);
+    background-image:
+      radial-gradient(1100px 600px at 12% -5%,  rgba(184,131,15,.10), transparent 60%),
+      radial-gradient(900px 500px at 95% 8%,    rgba(150,45,32,.06),  transparent 60%),
+      radial-gradient(700px 700px at 50% 110%,  rgba(61,107,78,.05),  transparent 60%);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  /* subtle paper-grain noise overlay */
+  body::before {
+    content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 100;
+    opacity: .04;  mix-blend-mode: multiply;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+  }
+
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 56px 28px 96px; }
+
+  /* ---------- masthead ---------- */
+  .mast { border-bottom: 1px solid var(--rule); padding-bottom: 22px; margin-bottom: 36px; }
+  .eyebrow {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 11px; letter-spacing: .22em; text-transform: uppercase;
+    color: var(--gold); margin-bottom: 14px;
+  }
+  .eyebrow .dot {
+    display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--gold); margin-right: 8px; transform: translateY(-1px);
+    box-shadow: 0 0 0 3px rgba(184,131,15,.18);
+  }
+  h1 {
+    font-family: Georgia, "Times New Roman", serif;
+    font-weight: 500;
+    font-variation-settings: "opsz" 144, "SOFT" 30;
+    font-size: clamp(40px, 7vw, 72px);
+    line-height: 1.02;
+    letter-spacing: -0.02em;
+    margin: 0 0 14px;
+    color: var(--text);
+  }
+  h1 em {
+    font-style: italic; font-weight: 300;
+    font-variation-settings: "opsz" 144, "SOFT" 80;
+    color: var(--gold);
+  }
+  .deck {
+    font-size: 17px; max-width: 60ch; color: var(--text-dim);
+    font-style: italic;
+  }
+
+  /* ---------- layout ---------- */
+  .grid {
+    display: grid; gap: 44px;
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  }
+  @media (max-width: 880px) { .grid { grid-template-columns: 1fr; gap: 36px; } }
+
+  /* ---------- inputs ---------- */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 28px 28px 24px;
+    box-shadow: var(--shadow);
+  }
+  .card + .card { margin-top: 22px; }
+  .card-title {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 10.5px; letter-spacing: .25em; text-transform: uppercase;
+    color: var(--text-dim); margin: 0 0 18px;
+    display: flex; align-items: baseline; gap: 10px;
+  }
+  .card-title::before {
+    content: ""; width: 22px; height: 1px; background: var(--gold);
+  }
+
+  .row { display: grid; grid-template-columns: 1fr; gap: 14px; }
+  .row.two { grid-template-columns: 1fr 1fr; }
+  @media (max-width: 540px) { .row.two { grid-template-columns: 1fr; } }
+
+  label { display: block; }
+  .lbl {
+    display: block; font-size: 13px; color: var(--text-dim);
+    margin-bottom: 6px; font-style: italic;
+  }
+  input[type="number"], input[type="range"] {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    width: 100%;
+    background: var(--surface); border: 1px solid var(--rule);
+    color: var(--text); padding: 10px 12px; font-size: 15px;
+    border-radius: 3px; outline: none;
+    accent-color: var(--gold);
+    transition: border-color .15s, background .15s;
+  }
+  input[type="number"]:focus {
+    border-color: var(--gold); background: var(--surface-2);
+  }
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  input[type="number"] { -moz-appearance: textfield; }
+
+  /* range with value */
+  .range-row { display: grid; grid-template-columns: 1fr 80px; gap: 12px; align-items: center; }
+  .range-val {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 14px;
+    color: var(--gold); text-align: right;
+  }
+  input[type="range"] { padding: 0; height: 3px; background: var(--rule); cursor: pointer; }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%;
+    background: var(--gold); border: 2px solid var(--bg);
+    box-shadow: 0 0 0 1px var(--gold);
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 14px; height: 14px; border-radius: 50%;
+    background: var(--gold); border: 2px solid var(--bg);
+    box-shadow: 0 0 0 1px var(--gold);
+  }
+
+  /* button */
+  .calc-btn {
+    margin-top: 20px; width: 100%;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 13px; letter-spacing: .2em; text-transform: uppercase;
+    background: var(--gold); color: var(--gold-text);
+    border: none; padding: 16px;
+    cursor: pointer; border-radius: 3px;
+    transition: transform .12s ease, box-shadow .15s, background .15s;
+    font-weight: 700;
+  }
+  .calc-btn:hover { background: var(--gold-2); box-shadow: 0 0 0 1px var(--gold-2), 0 8px 22px -10px rgba(184,131,15,.45); }
+  .calc-btn:active { transform: translateY(1px); }
+  .calc-btn:disabled { opacity: .55; cursor: progress; }
+
+  /* ---------- result panel ---------- */
+  .result {
+    position: sticky; top: 28px;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 36px 32px 32px;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+  .result-tag {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 10.5px; letter-spacing: .28em; text-transform: uppercase;
+    color: var(--text-dim);
+  }
+  .principal {
+    font-family: Georgia, "Times New Roman", serif;
+    font-variation-settings: "opsz" 144;
+    font-weight: 500;
+    font-size: clamp(56px, 9vw, 96px);
+    line-height: .95;
+    margin: 14px 0 4px;
+    color: var(--text);
+    letter-spacing: -0.025em;
+  }
+  .principal .currency {
+    color: var(--gold); font-weight: 300;
+    font-style: italic;
+    margin-right: 6px;
+  }
+  .principal-sub {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px; color: var(--text-dim); letter-spacing: .08em;
+    margin-bottom: 28px;
+  }
+
+  .voo {
+    border-top: 1px solid var(--rule);
+    padding-top: 22px; margin-top: 22px;
+  }
+  .voo-num {
+    font-family: Georgia, "Times New Roman", serif;
+    font-weight: 500;
+    font-size: 38px; line-height: 1; color: var(--gold);
+    letter-spacing: -0.01em;
+  }
+
+  .placeholder {
+    color: var(--text-faint); font-style: italic; text-align: center;
+    padding: 40px 0; font-size: 14px;
+  }
+
+  /* footnotes */
+  .notes {
+    margin-top: 48px; padding-top: 28px; border-top: 1px solid var(--rule);
+    font-size: 13px; color: var(--text-dim); max-width: 64ch;
+  }
+  .notes p { margin: 0 0 10px; }
+  .notes .label {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 10.5px;
+    letter-spacing: .22em; text-transform: uppercase; color: var(--text);
+    display: block; margin-bottom: 6px;
+  }
+
+  /* error */
+  .err {
+    color: var(--oxblood); border-left: 2px solid var(--oxblood);
+    padding-left: 12px; margin-top: 14px; font-size: 13px;
+  }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .reveal > * { animation: fadeUp .45s ease both; }
+  .reveal > *:nth-child(1) { animation-delay: .02s; }
+  .reveal > *:nth-child(2) { animation-delay: .08s; }
+  .reveal > *:nth-child(3) { animation-delay: .14s; }
+  .reveal > *:nth-child(4) { animation-delay: .20s; }
+  .reveal > *:nth-child(5) { animation-delay: .26s; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ============== MASTHEAD ============== -->
+  <header class="mast">
+    <div class="eyebrow"><span class="dot"></span>Monte Carlo Decumulation Model · 10,000 paths</div>
+    <h1>How many <em>VOO</em> shares to walk away from the desk?</h1>
+    <p class="deck">A probabilistic model of the principal you need at retirement so your portfolio survives the years ahead. Plug in the numbers; the math handles the rest.</p>
+  </header>
+
+  <!-- ============== MAIN GRID ============== -->
+  <main class="grid">
+
+    <!-- ===== LEFT: INPUTS ===== -->
+    <section>
+
+      <div class="card">
+        <h2 class="card-title">Spending &amp; Horizon</h2>
+        <div class="row">
+          <label>
+            <span class="lbl">Net monthly spending — today's purchasing power, after-tax ($)</span>
+            <input type="number" id="monthly_target" value="5000" min="0" max="100000" step="100">
+          </label>
+          <div class="row two">
+            <label>
+              <span class="lbl">Retirement age</span>
+              <input type="number" id="retire_age" value="40" min="19" max="105" step="1">
+            </label>
+            <label>
+              <span class="lbl">Life expectancy</span>
+              <input type="number" id="death_age" value="90" min="20" max="105" step="1">
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">Markets &amp; Inflation</h2>
+        <div class="row two">
+          <label>
+            <span class="lbl">Mean annual return (arithmetic)</span>
+            <input type="number" id="nom_return" value="0.1033" min="0" max="1" step="0.001">
+          </label>
+          <label>
+            <span class="lbl">Annual return SD</span>
+            <input type="number" id="return_sd" value="0.152" min="0" max="1" step="0.001">
+          </label>
+          <label>
+            <span class="lbl">Mean CPI inflation</span>
+            <input type="number" id="cpi" value="0.025" min="0" max="1" step="0.001">
+          </label>
+          <label>
+            <span class="lbl">CPI SD</span>
+            <input type="number" id="cpi_sd" value="0.010" min="0" max="1" step="0.001">
+          </label>
+        </div>
+        <div class="row" style="margin-top:14px">
+          <label>
+            <span class="lbl">Current VOO share price ($)</span>
+            <input type="number" id="voo_price" value="663" min="0.01" max="100000" step="0.01">
+          </label>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">Health Insurance</h2>
+        <div class="row two">
+          <label>
+            <span class="lbl">Premium inflation (annual)</span>
+            <input type="number" id="health_cpi" value="0.050" min="0" max="0.20" step="0.001">
+          </label>
+          <label>
+            <span class="lbl">Annual premium ($, today)</span>
+            <input type="number" id="annual_health_prem" value="6000" min="0" max="100000" step="100">
+          </label>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">Simulation Settings</h2>
+        <div class="row">
+          <label>
+            <span class="lbl">Effective tax rate on withdrawals</span>
+            <div class="range-row">
+              <input type="range" id="tax_rate" value="0" min="0" max="0.6" step="0.005">
+              <span class="range-val" id="tax_rate_v">0.0%</span>
+            </div>
+          </label>
+          <label>
+            <span class="lbl">Success probability target</span>
+            <div class="range-row">
+              <input type="range" id="target" value="0.95" min="0.68" max="0.997" step="0.005">
+              <span class="range-val" id="target_v">95.0%</span>
+            </div>
+          </label>
+        </div>
+        <button class="calc-btn" id="run">Calculate</button>
+      </div>
+
+      <div class="notes">
+        <span class="label">Conventions</span>
+        <p>Spending is entered in today's purchasing power, after tax. The model inflates it through retirement using a stationary AR(1) CPI process. The health-insurance premium is grossed up for tax (assumed paid from taxable withdrawals).</p>
+        <span class="label" style="margin-top:14px">Disclaimer</span>
+        <p>Educational model only. Not investment advice. Estimates are stochastic and non-guaranteed; market returns, inflation, taxes, fees, and health costs all vary in reality.</p>
+      </div>
+
+    </section>
+
+    <!-- ===== RIGHT: RESULT ===== -->
+    <aside>
+      <div class="result" id="result">
+        <div class="placeholder">
+          Enter your numbers, then press Calculate.
+        </div>
+      </div>
+    </aside>
+
+  </main>
+</div>
+
+<script>
+/* ============================================================
+   CORE MATH — Monte Carlo decumulation, all in pure JS / typed arrays.
+   Same logic as the R reference implementation.
+
+   PERFORMANCE NOTES
+   - Returns and CPI matrices are pre-generated ONCE per Calculate
+     and reused across all bisection calls (Common Random Numbers).
+     This keeps the bisection monotone, so we converge in O(log)
+     iterations, and each iteration only re-walks the path matrix.
+   - Float64Array everywhere; flat row-major indexing (i*yrs + t).
+   - Box-Muller is inlined; antithetic pairs halve MC noise.
+   - 10,000 sims × 50 yrs × ~25 bisection iterations
+     ≈ 12M FMA-style ops; runs in <300ms on commodity hardware.
+   ============================================================ */
+
+const SIMS = 10000;
+const PHI  = 0.6;  // CPI AR(1) persistence — ECB WP No. 370 cites ~0.58–0.59
+
+// ---- inline Box-Muller pair generator ----
+// Returns one N(0,1); a cached second draw is returned next call.
+let bmCache = null;
+function nrand() {
+  if (bmCache !== null) { const v = bmCache; bmCache = null; return v; }
+  let u1, u2;
+  do { u1 = Math.random(); } while (u1 === 0);
+  u2 = Math.random();
+  const mag = Math.sqrt(-2 * Math.log(u1));
+  bmCache = mag * Math.sin(2 * Math.PI * u2);
+  return mag * Math.cos(2 * Math.PI * u2);
+}
+
+function buildScenarios(yrs, mu, sigma, cpiMu, cpiSd) {
+  // Returns: antithetic pairs of N(mu, sigma^2), floored at -95%
+  const N = SIMS, half = N >> 1;
+  const rets = new Float64Array(N * yrs);
+  for (let t = 0; t < yrs; t++) {
+    for (let i = 0; i < half; i++) {
+      const z = nrand();
+      let r1 = mu + sigma * z;
+      let r2 = mu - sigma * z;
+      if (r1 < -0.95) r1 = -0.95;
+      if (r2 < -0.95) r2 = -0.95;
+      rets[i * yrs + t]            = r1;
+      rets[(i + half) * yrs + t]   = r2;
+    }
+  }
+
+  // CPI: AR(1) with stationary init, then cumulative price index
+  // via log-space cumsum for numerical stability.
+  const sigmaEps = cpiSd * Math.sqrt(Math.max(1e-12, 1 - PHI * PHI));
+  const cpiIdx = new Float64Array(N * yrs);
+  for (let i = 0; i < N; i++) {
+    let pi = cpiMu + cpiSd * nrand();   // year-1 stationary draw
+    if (pi < -0.5) pi = -0.5;
+    let log_idx = Math.log1p(pi);
+    cpiIdx[i * yrs] = Math.exp(log_idx);
+    for (let t = 1; t < yrs; t++) {
+      pi = cpiMu * (1 - PHI) + PHI * pi + sigmaEps * nrand();
+      if (pi < -0.5) pi = -0.5;
+      log_idx += Math.log1p(pi);
+      cpiIdx[i * yrs + t] = Math.exp(log_idx);
+    }
+  }
+  return { rets, cpiIdx };
+}
+
+function buildWithdrawals(yrs, monthlyTarget, taxRate, healthPremium, healthCpi, cpiIdx) {
+  // wd[i*yrs + t] = annual gross withdrawal for path i, year t
+  const N = SIMS;
+  const grossGen = (12 * monthlyTarget) / (1 - taxRate);
+  const grossHi  = healthPremium / (1 - taxRate);
+  const wd = new Float64Array(N * yrs);
+  // health factor is deterministic, precompute
+  const hf = new Float64Array(yrs);
+  hf[0] = 1;
+  for (let t = 1; t < yrs; t++) hf[t] = hf[t-1] * (1 + healthCpi);
+  for (let i = 0; i < N; i++) {
+    for (let t = 0; t < yrs; t++) {
+      const withdrawalCpi = t === 0 ? 1 : cpiIdx[i * yrs + t - 1];
+      wd[i * yrs + t] = grossGen * withdrawalCpi + grossHi * hf[t];
+    }
+  }
+  return wd;
+}
+
+function successRate(P, yrs, rets, wd) {
+  let nSurvived = 0;
+  for (let i = 0; i < SIMS; i++) {
+    let bal = P;
+    let alive = true;
+    const base = i * yrs;
+    for (let t = 0; t < yrs; t++) {
+      bal -= wd[base + t];
+      if (bal < 0) { alive = false; break; }
+      bal *= 1 + rets[base + t];
+    }
+    if (alive) nSurvived++;
+  }
+  return nSurvived / SIMS;
+}
+
+// ============================================================
+//  MAIN ENTRY
+// ============================================================
+function requiredPrincipal(p) {
+  const yrs = (p.deathAge - p.retireAge) | 0;
+  if (yrs <= 0) throw new Error("Life expectancy must exceed retirement age.");
+  if (p.taxRate < 0 || p.taxRate >= 1) throw new Error("Invalid tax rate.");
+
+  // Zero need shortcut: bisection floor would otherwise return $1000
+  // because of the precision step. Handle exactly.
+  const grossNeed = (12 * p.monthlyTarget) / (1 - p.taxRate)
+                  + p.healthPremium / (1 - p.taxRate);
+  if (grossNeed === 0) return { principal: 0, yrs };
+
+  bmCache = null;  // fresh PRNG state each run
+
+  const { rets, cpiIdx } = buildScenarios(
+    yrs, p.nomReturn, p.returnSd, p.cpi, p.cpiSd
+  );
+  const wd = buildWithdrawals(
+    yrs, p.monthlyTarget, p.taxRate, p.healthPremium, p.healthCpi, cpiIdx
+  );
+
+  // Initial bracket: 25× annual gross need (inverse 4% rule).
+  let lo = 0, hi = Math.max(1, grossNeed * 25);
+  for (let i = 0; i < 30; i++) {
+    if (successRate(hi, yrs, rets, wd) >= p.target) break;
+    hi *= 2;
+  }
+  // Bisect to $1000 precision
+  while ((hi - lo) > 1000) {
+    const mid = (hi + lo) / 2;
+    if (successRate(mid, yrs, rets, wd) >= p.target) hi = mid;
+    else lo = mid;
+  }
+  return { principal: Math.ceil(hi / 1000) * 1000, yrs };
+}
+
+// ============================================================
+//  RENDERING
+// ============================================================
+const $ = (id) => document.getElementById(id);
+const fmtInt = (x) => Math.round(x).toLocaleString("en-US");
+const fmt2   = (x) => x.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+function readInputs() {
+  return {
+    monthlyTarget: +$("monthly_target").value,
+    retireAge:     +$("retire_age").value,
+    deathAge:      +$("death_age").value,
+    nomReturn:     +$("nom_return").value,
+    returnSd:      +$("return_sd").value,
+    cpi:           +$("cpi").value,
+    cpiSd:         +$("cpi_sd").value,
+    healthCpi:     +$("health_cpi").value,
+    healthPremium: +$("annual_health_prem").value,
+    taxRate:       +$("tax_rate").value,
+    target:        +$("target").value,
+    vooPrice:      +$("voo_price").value
+  };
+}
+
+function render(res, p) {
+  const shares = res.principal / p.vooPrice;
+  $("result").innerHTML = `
+    <div class="reveal">
+      <div class="result-tag">Required Principal at Retirement</div>
+      <div class="principal"><span class="currency">$</span>${fmtInt(res.principal)}</div>
+      <div class="principal-sub">at age ${p.retireAge} · ${res.yrs} years horizon</div>
+
+      <div class="voo">
+        <div class="result-tag">VOO Equivalent</div>
+        <div style="margin-top:8px">
+          <span class="voo-num">${fmtInt(shares)}</span>
+          <span style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;color:var(--text-dim);margin-left:10px">shares @ $${fmt2(p.vooPrice)}</span>
+        </div>
+      </div>
+    </div>`;
+}
+
+function runCalc() {
+  const btn = $("run");
+  btn.disabled = true;
+  btn.textContent = "Running 10,000 paths…";
+  // brief delay so the UI repaints the disabled state before the blocking compute
+  setTimeout(() => {
+    try {
+      const p = readInputs();
+      const t0 = performance.now();
+      const res = requiredPrincipal(p);
+      const dt = performance.now() - t0;
+      render(res, p);
+      btn.textContent = `Calculate · last run ${dt.toFixed(0)}ms`;
+    } catch (e) {
+      $("result").innerHTML = `<div class="err">${e.message}</div>`;
+      btn.textContent = "Calculate";
+    } finally {
+      btn.disabled = false;
+    }
+  }, 16);
+}
+
+// ---- range value mirrors ----
+function bindRange(id, fmt) {
+  const el = $(id), v = $(id + "_v");
+  const upd = () => v.textContent = fmt(+el.value);
+  el.addEventListener("input", upd);
+  upd();
+}
+bindRange("tax_rate", x => (x * 100).toFixed(1) + "%");
+bindRange("target",   x => (x * 100).toFixed(1) + "%");
+
+$("run").addEventListener("click", runCalc);
+// allow Enter on any number input to trigger
+document.querySelectorAll("input[type=number]").forEach(el => {
+  el.addEventListener("keydown", e => { if (e.key === "Enter") runCalc(); });
+});
+</script>
+</body>
+</html>
