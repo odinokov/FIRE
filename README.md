@@ -46,12 +46,15 @@ The calculator groups inputs into four sections.
 
 ```
 Required Principal at Retirement
-$2,196,000
+$2,280,000
 at age 40 · 50 years horizon
+success 95.0% (95% CI 94.6–95.4%) · implied SWR 2.89%
 
 VOO Equivalent
-3,312 shares @ $663.00
+3,439 shares @ $663.00
 ```
+
+The **success** line reports the achieved survival fraction at the rounded principal, with a Wilson 95% confidence interval reflecting Monte Carlo noise across the 10,000 paths. The **implied SWR** is your first-year gross withdrawal divided by the principal — see "Sanity-checking your result" below. Exact figures vary slightly between runs (each Calculate draws fresh random paths).
 
 The principal is in **nominal dollars at retirement** — that is, the amount you'd need on the day you retire, not the amount you'd need today. With 10 years between now and retirement at 2.5% inflation, today's $2M and retirement-day $2.5M buy the same lifestyle.
 
@@ -68,6 +71,8 @@ The calculator runs **10,000 simulated retirements** using your assumptions, the
 For each of the 10,000 paths, draw `yrs` independent annual returns from `N(μ, σ²)` and floor at −95% (a near-impossible guard against pathological draws).
 
 The implementation uses **antithetic pairing** for variance reduction: half the paths use `μ + σ·z`, the other half use `μ − σ·z` for the same `z`. This halves Monte Carlo noise for free.
+
+Each run draws a fresh set of random paths, so repeated runs with the same inputs differ by a few thousand dollars of Monte Carlo noise — the confidence interval on the success line quantifies it. (The simulation core accepts an optional seed for reproducibility; the test harness uses it.)
 
 ### Step 2 — Pre-generate stochastic inflation
 
@@ -112,7 +117,7 @@ Because the same return matrix and CPI matrix are used for every call (Common Ra
 We seek the smallest `P*` such that `success_rate(P*) ≥ target`.
 
 1. Initial bracket: `lo = 0`, `hi = 25 × annual_gross_need` (the inverse-4%-rule estimate).
-2. Double `hi` until `success_rate(hi) ≥ target`. Almost never needed — the initial bracket is generous.
+2. Double `hi` until `success_rate(hi) ≥ target`. Almost never needed — the initial bracket is generous. If even 30 doublings can't reach the target (pathological assumptions, e.g. a deeply negative mean return), the calculator reports an error instead of a misleading number.
 3. Bisect: while `hi − lo > $1000`, set `mid = (hi+lo)/2` and shrink the interval based on `success_rate(mid)`.
 
 Final principal is rounded up to the nearest $1000. Total runtime: ~150 ms because each bisection iteration just re-walks the precomputed return/withdrawal matrices.
@@ -128,6 +133,8 @@ Every numerical default is anchored on a published source. Citations are kept sh
 Anchored on the recent 30-year VOO-equivalent experience. From [Lazy Portfolio ETF](http://www.lazyportfolioetf.com/etf/vanguard-sp-500-voo/), citing data through April 2026:
 
 > in the previous 30 Years, the Vanguard S&P 500 (VOO) ETF obtained a 10.24% compound annual return, with a 15.31% standard deviation
+
+Note that the cited 10.24% is a **compound (geometric)** return, while the model's input is an **arithmetic** mean. With σ ≈ 15.2%, a 10.24% CAGR corresponds to an arithmetic mean of roughly 10.24% + σ²/2 ≈ 11.4%. The 10.33% default is deliberately below that — an extra margin of conservatism on top of using the recent-era SD.
 
 For the long-run perspective (S&P 500 since 1928), [Marshall & Stevens](https://marshall-stevens.com/insights-center/the-sp-500-returns-a-historical-perspective-part-2/) reports:
 
@@ -177,7 +184,7 @@ But the original Trinity Study only covers 30 years. From [The Poor Swiss's upda
 
 > If you increase the simulation time to more than 30 years, a 4% withdrawal rate is no longer safe
 
-For 50-year horizons the recommended rate drops to about 3.5%. This is a direct sanity check for our calculator: with $5,000/month spending, $6,000/year health, retirement age 40, life expectancy 90 (50 years), 95% target, our model produces a principal in the $2.0–2.6M range — consistent with `25× to 28.5×` annual gross need.
+For 50-year horizons the recommended rate drops to about 3.5%. This is a direct sanity check for our calculator: with $5,000/month spending, $6,000/year health, retirement age 40, life expectancy 90 (50 years), 95% target, our model produces a principal of $2.28M against a $66k first-year gross need — an implied SWR of 2.89%, or about `34.5×` annual gross need. That's somewhat more conservative than the 3.5% guideline, mostly because the health premium inflates at 5% per year rather than at CPI.
 
 ### Validation summary
 
@@ -189,15 +196,15 @@ For 50-year horizons the recommended rate drops to about 3.5%. This is a direct 
 | CPI SD (1.0%) | Post-1990 era | Realized post-1990 ≈ 1.0–1.5% | Defensible |
 | CPI persistence φ (0.6) | Mid-range AR(1) | ECB WP No. 370: empirical AR(1) ~0.58–0.59 | Validated |
 | Health-care inflation (5.0%) | Forward-looking midpoint | BLS 3.4%, Milliman 4.7%, HealthView 5.8% | Validated |
-| 4% / 3.5% SWR sanity check | Trinity Study | 100% success at 30 yrs / weakens past 30 | Outputs land in this band |
+| 4% / 3.5% SWR sanity check | Trinity Study | 100% success at 30 yrs / weakens past 30 | Default output is 2.9% — conservative side of the band, driven by 5% health inflation |
 
 ---
 
 ## Sanity-checking your result
 
-A quick mental check: divide your annual gross spending need by your principal. That ratio is your **implied safe withdrawal rate**.
+Your annual gross spending need divided by your principal is your **implied safe withdrawal rate** — both versions display it directly beneath the result.
 
-- **3.0–3.5%** → conservative; appropriate for 40+ year horizons
+- **2.5–3.5%** → conservative; appropriate for 40+ year horizons
 - **3.5–4.0%** → standard 30-year-retirement territory (the famous "4% rule")
 - **5%+** → aggressive; the Trinity Study found 5% had ~68% success at 30 years, lower at longer horizons
 
@@ -221,15 +228,6 @@ These are honest simplifications. For each, the calculator's defaults err slight
 It is **not a forecast**. It produces a probability distribution over 10,000 alternative futures, each consistent with your assumptions. You will live exactly one of those futures, and it will not be the median.
 
 It is **not investment advice**. It is a model that takes your assumptions and reports a number. If your assumptions are wrong, the number is wrong. The defaults are anchored on real data but real data is messy.
-
-## Editing the defaults
-
-The defaults are reasonable for "100% VOO retiree using post-1990 statistics, planning to age 90." If your situation differs:
-
-- **More conservative on tail risk** → raise return SD to 19.7%, raise CPI SD to 1.5–2%
-- **More conservative on health costs** → raise health-premium inflation to 5.8%
-- **You hold bonds too** → lower return mean and SD proportionally to your equity allocation
-- **You live abroad** → use your country's CPI mean/SD, ignore the health-premium fields if covered by national insurance
 
 ## License
 

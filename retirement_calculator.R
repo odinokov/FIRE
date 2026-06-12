@@ -30,10 +30,14 @@ required_principal <- function(
     precision = 1000,
     rng       = NULL
 ) {
-  if (death_age <= retire_age)       stop("death_age must exceed retire_age")
+  if (!all(is.finite(c(monthly_target, retire_age, death_age, nominal_return,
+                       return_sd, cpi, cpi_sd, health_insurance_cpi,
+                       annual_health_insurance_premium, tax_rate, target))))
+    stop("All inputs must be filled in with valid numbers.")
+  if (death_age <= retire_age)       stop("Life expectancy must exceed retirement age.")
   if (tax_rate < 0 || tax_rate >= 1) stop("tax_rate must be in [0, 1)")
-  if (target   < 0 || target   > 1)  stop("target must be in [0, 1]")
-  if (any(c(monthly_target, return_sd, cpi_sd,
+  if (target <= 0 || target >= 1)    stop("target must be in (0, 1)")
+  if (any(c(monthly_target, return_sd, cpi_sd, health_insurance_cpi,
             annual_health_insurance_premium) < 0))
     stop("Negative inputs not allowed")
 
@@ -50,16 +54,17 @@ required_principal <- function(
   phi       <- 0.6
   sigma_eps <- cpi_sd * sqrt(max(1e-12, 1 - phi^2))
   cpi_series <- matrix(NA_real_, sims, yrs)
-  cpi_series[, 1] <- rnorm(sims, mean = cpi, sd = cpi_sd)  # stationary init
+  # Floor at -50% inside the recursion (matching the JS implementation),
+  # so the floored value feeds the next year's AR(1) step.
+  cpi_series[, 1] <- pmax(rnorm(sims, mean = cpi, sd = cpi_sd), -0.5)  # stationary init
   if (yrs >= 2) {
     eps <- matrix(rnorm(sims * (yrs - 1), 0, sigma_eps), sims, yrs - 1)
     for (t in 2:yrs) {
-      cpi_series[, t] <- cpi * (1 - phi) +
-                         phi * cpi_series[, t - 1] +
-                         eps[, t - 1]
+      cpi_series[, t] <- pmax(cpi * (1 - phi) +
+                              phi * cpi_series[, t - 1] +
+                              eps[, t - 1], -0.5)
     }
   }
-  cpi_series <- pmax(cpi_series, -0.5)
   cpi_index  <- exp(t(apply(log1p(cpi_series), 1, cumsum)))
 
   # Annual withdrawals (gross of tax)
@@ -68,10 +73,11 @@ required_principal <- function(
   gross_need <- gross_annual_general + gross_annual_health
   if (gross_need == 0) {
     return(list(
-      principal       = 0,
-      success_percent = 100,
-      success_ci      = c(100, 100),
-      retire_age      = retire_age
+      principal         = 0,
+      gross_annual_need = 0,
+      success_percent   = 100,
+      success_ci        = c(100, 100),
+      retire_age        = retire_age
     ))
   }
 
@@ -98,8 +104,13 @@ required_principal <- function(
   # Bisect on principal (common random numbers across calls)
   lo <- 0
   hi <- max(1, gross_need / 0.04)
-  for (i in 1:30) {
-    if (success_rate(hi) >= target) break
+  tries <- 30
+  while (success_rate(hi) < target) {
+    tries <- tries - 1
+    if (tries == 0)
+      stop("Success target is unattainable under these assumptions — ",
+           "lower the target or revisit the return and inflation inputs.")
+    lo <- hi  # a failing hi is a valid lower bound (success is monotone in P)
     hi <- hi * 2
   }
   while ((hi - lo) > precision) {
@@ -117,10 +128,11 @@ required_principal <- function(
   ci <- pmin(pmax(c(center - half_w, center + half_w), 0), 1)
 
   list(
-    principal       = principal,
-    success_percent = round(p_hat * 100, 1),
-    success_ci      = round(ci * 100, 1),
-    retire_age      = retire_age
+    principal         = principal,
+    gross_annual_need = gross_need,
+    success_percent   = round(p_hat * 100, 1),
+    success_ci        = round(ci * 100, 1),
+    retire_age        = retire_age
   )
 }
 
@@ -166,9 +178,11 @@ ui <- fluidPage(
       sliderInput("tax_rate", "Effective tax rate on withdrawals:",
                   min = 0, max = 0.60, value = 0.00, step = 0.001),
       sliderInput("target",   "Success probability target:",
-                  min = 0.68, max = 0.997, value = 0.95, step = 0.01),
-      actionButton("run_sim", "Calculate", class = "btn-primary"),
-      hr(), uiOutput("result_box"),
+                  min = 0.68, max = 0.995, value = 0.95, step = 0.005),
+      actionButton("run_sim", "Calculate", class = "btn-primary")
+    ),
+    mainPanel(
+      uiOutput("result_box"),
       hr(),
       tags$p(tags$strong("Conventions"), style = "margin-bottom:4px;"),
       tags$p(
@@ -176,17 +190,16 @@ ui <- fluidPage(
         "The model inflates it through retirement using stochastic CPI. ",
         "The health-insurance premium is grossed up for tax (it assumes ",
         "you pay it from taxable withdrawals).",
-        style = "font-size:11px;color:#6c757d;line-height:1.3;margin:0 0 6px 0;"
+        style = "font-size:12px;color:#6c757d;line-height:1.4;margin:0 0 6px 0;"
       ),
       tags$p(tags$strong("Disclaimer"), style = "margin-bottom:4px;"),
       tags$p(
         "Educational model only. Not investment advice. Estimates are ",
         "stochastic and non-guaranteed. Market returns, inflation, taxes, ",
         "fees, and health costs all vary in reality.",
-        style = "font-size:11px;color:#6c757d;line-height:1.3;margin:0;"
+        style = "font-size:12px;color:#6c757d;line-height:1.4;margin:0;"
       )
-    ),
-    mainPanel()
+    )
   )
 )
 
@@ -195,8 +208,9 @@ ui <- fluidPage(
 # =====================================================================
 server <- function(input, output, session) {
   sim_res <- eventReactive(input$run_sim, {
-    if (input$death_age <= input$retire_age)
-      stop("Life expectancy must exceed retirement age.")
+    # Domain validation lives in required_principal(); only the UI-only
+    # voo_price (not a model argument) is checked here.
+    validate(need(input$voo_price > 0, "VOO share price must be positive."))
 
     res <- required_principal(
       monthly_target                  = input$monthly_target,
@@ -218,12 +232,13 @@ server <- function(input, output, session) {
   })
 
   output$result_box <- renderUI({
-    req(sim_res())
+    validate(need(input$run_sim > 0,
+                  "Enter your numbers, then press Calculate."))
     res <- sim_res()
     fmt_int <- function(x) formatC(x, format = "f", digits = 0,
-                                   big.mark = ".", decimal.mark = ",")
+                                   big.mark = ",", decimal.mark = ".")
     fmt_2   <- function(x) formatC(x, format = "f", digits = 2,
-                                   big.mark = ".", decimal.mark = ",")
+                                   big.mark = ",", decimal.mark = ".")
 
     tags$div(
       style = "background:#f8f9fa; border:1px solid #dee2e6;
@@ -240,6 +255,11 @@ server <- function(input, output, session) {
                 fmt_int(res$principal / res$voo_price),
                 fmt_2(res$voo_price)),
         style = "font-size:14px;color:#343a40;margin:2px 0 0 0;"
+      ),
+      if (res$principal > 0) tags$p(
+        sprintf("Implied SWR: %.2f%% of principal per year (gross)",
+                100 * res$gross_annual_need / res$principal),
+        style = "font-size:12px;color:#343a40;margin:2px 0 0 0;"
       ),
       tags$p(
         sprintf("Success probability: %.1f%% (95%% MC CI: %.1f%%–%.1f%%)",
