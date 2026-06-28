@@ -139,14 +139,25 @@
     font-size: 14px;
     color: var(--text-dim); text-align: right;
   }
-  input[type="range"] { padding: 0; height: 3px; background: var(--rule); cursor: pointer; }
+  input[type="range"] {
+    -webkit-appearance: none; appearance: none;
+    padding: 0; height: 3px; background: var(--rule); border-radius: 2px; cursor: pointer;
+  }
   input[type="range"]:focus-visible {
     outline: 2px solid var(--text); outline-offset: 4px; border-radius: 2px;
+  }
+  /* fully self-styled track + thumb so rendering never falls back to the
+     native widget, which a dark OS/GTK theme can render invisible */
+  input[type="range"]::-webkit-slider-runnable-track {
+    height: 3px; background: var(--rule); border-radius: 2px;
+  }
+  input[type="range"]::-moz-range-track {
+    height: 3px; background: var(--rule); border-radius: 2px;
   }
   input[type="range"]::-webkit-slider-thumb {
     -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%;
     background: var(--text); border: 2px solid var(--surface);
-    box-shadow: 0 0 0 1px var(--text);
+    box-shadow: 0 0 0 1px var(--text); margin-top: -6.5px;
   }
   input[type="range"]::-moz-range-thumb {
     width: 16px; height: 16px; border-radius: 50%;
