@@ -649,6 +649,17 @@ function bindRange(id, fmt) {
 bindRange("tax_rate", x => fmtPct1(x) + "%");
 bindRange("target",   x => fmtPct1(x) + "%");
 
+// Drag-only sliders: a click on the track must not jump the value; only
+// grabbing the thumb (or arrow keys) changes it.
+document.querySelectorAll('input[type="range"]').forEach(el => {
+  el.addEventListener("pointerdown", e => {
+    const r = el.getBoundingClientRect(), thumb = 16;
+    const frac = (+el.value - +el.min) / (+el.max - +el.min);
+    const thumbX = r.left + thumb / 2 + frac * (r.width - thumb);
+    if (Math.abs(e.clientX - thumbX) > thumb / 2) e.preventDefault();
+  });
+});
+
 $("run").addEventListener("click", runCalc);
 // allow Enter on any number input to trigger
 document.querySelectorAll("input[type=number]").forEach(el => {
